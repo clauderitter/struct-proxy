@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>struct-proxy</title>
+<meta name="description" content="Request logs and token analytics for Blatent API traffic through struct-proxy.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='2' y='8' width='3' height='6' rx='1' fill='%232a78d6'/%3E%3Crect x='6.5' y='4' width='3' height='10' rx='1' fill='%232a78d6'/%3E%3Crect x='11' y='6' width='3' height='8' rx='1' fill='%23eb6834'/%3E%3C/svg%3E">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --raised: #ffffff;
+    --text: #0b0b0b;
+    --text-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --hover: rgba(11, 11, 11, 0.045);
+    --code-bg: #f3f2ef;
+    --s1: #2a78d6;
+    --s2: #eb6834;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --focus: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --raised: #222221;
+      --text: #ffffff;
+      --text-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --hover: rgba(255, 255, 255, 0.06);
+      --code-bg: #121211;
+      --s1: #3987e5;
+      --s2: #d95926;
+      --focus: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --raised: #222221;
+    --text: #ffffff;
+    --text-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --hover: rgba(255, 255, 255, 0.06);
+    --code-bg: #121211;
+    --s1: #3987e5;
+    --s2: #d95926;
+    --focus: #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
+  [hidden] { display: none !important; }
+
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 20px 16px 56px; }
+  header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+  .brand h1 { font-size: 18px; font-weight: 650; margin: 0; letter-spacing: -0.01em; }
+  .brand p { margin: 2px 0 0; color: var(--text-2); font-size: 13px; }
+  .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--text-2); font-size: 13px; }
+
+  .btn {
+    border: 1px solid var(--border); background: var(--raised); border-radius: 8px;
+    padding: 6px 11px; cursor: pointer; line-height: 1.2; white-space: nowrap;
+  }
+  .btn:hover { background: var(--hover); }
+  .btn.primary { background: var(--text); color: var(--page); border-color: transparent; }
+  .btn.small { padding: 4px 8px; font-size: 12px; }
+  .link { background: none; border: 0; padding: 0; color: var(--text-2); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+  .switch { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch .track { width: 30px; height: 18px; border-radius: 9px; background: var(--axis); position: relative; transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .switch input:checked + .track { background: var(--good); }
+  .switch input:checked + .track::after { transform: translateX(12px); }
+  .switch input:focus-visible + .track { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .filters { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; padding: 2px; background: var(--hover); }
+  .segmented button { border: 0; background: none; padding: 5px 11px; border-radius: 7px; cursor: pointer; color: var(--text-2); }
+  .segmented button[aria-pressed="true"] { background: var(--raised); color: var(--text); font-weight: 600; box-shadow: 0 0 0 1px var(--border); }
+  .field { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
+  select { border: 1px solid var(--border); background: var(--raised); border-radius: 8px; padding: 5px 8px; max-width: 220px; }
+
+  .notice { border: 1px solid var(--border); background: var(--surface); border-left: 3px solid var(--warning); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; color: var(--text-2); }
+  .notice strong { color: var(--text); }
+  .notice.error { border-left-color: var(--critical); }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .card-head h2 { font-size: 14px; font-weight: 600; margin: 0; }
+  .card-head .sub { color: var(--text-2); font-size: 12.5px; }
+  .stack { display: grid; gap: 12px; }
+  #app.loading .dim { opacity: .55; transition: opacity .2s; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  @media (max-width: 480px) { .tile .value { font-size: 24px; } }
+  .tile .label { color: var(--text-2); font-size: 13px; }
+  .tile .value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; margin: 4px 0 2px; }
+  .tile .note { color: var(--text-2); font-size: 12.5px; }
+
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .legend { display: flex; gap: 14px; color: var(--text-2); font-size: 12.5px; margin: -4px 0 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .plot { min-height: 184px; }
+  .plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .plot .grid { stroke: var(--grid); stroke-width: 1; }
+  .plot .axis { stroke: var(--axis); stroke-width: 1; }
+  .plot .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .plot .hit { fill: transparent; pointer-events: all; outline: none; }
+  .plot .col:hover .hit, .plot .hit:focus { fill: var(--hover); }
+  .plot .bar { pointer-events: none; }
+  .plot .empty { fill: var(--muted); font-size: 12.5px; }
+  .plot .table-view { max-height: 184px; overflow: auto; }
+
+  .split { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
+  @media (max-width: 860px) { .split { grid-template-columns: minmax(0, 1fr); } }
+
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-weight: 500; color: var(--text-2); font-size: 12.5px; padding: 6px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--grid); white-space: nowrap; vertical-align: top; }
+  tr:last-child > td { border-bottom: 0; }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.muted { color: var(--text-2); }
+  tbody tr.clickable { cursor: pointer; }
+  tbody tr.clickable:hover > td { background: var(--hover); }
+  tbody tr.open > td { background: var(--hover); border-bottom-color: transparent; }
+  .empty-row { color: var(--text-2); padding: 14px 10px; white-space: normal; }
+
+  .status { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.good { background: var(--good); }
+  .dot.warning { background: var(--warning); }
+  .dot.critical { background: var(--critical); }
+  .code-tag { color: var(--text-2); }
+  .chev { display: inline-block; width: 10px; color: var(--muted); transition: transform .15s; }
+  tr.open .chev { transform: rotate(90deg); }
+
+  .detail > td { padding: 4px 10px 16px; white-space: normal; background: var(--hover); }
+  .meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px 18px; margin: 4px 0 12px; }
+  .meta div { min-width: 0; }
+  .meta dt { color: var(--text-2); font-size: 12px; }
+  .meta dd { margin: 1px 0 0; overflow-wrap: anywhere; }
+  .bodies { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+  .bodies h3 { font-size: 12.5px; font-weight: 600; margin: 0 0 6px; }
+  pre.body { margin: 0; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; max-height: 340px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .more { margin-top: 10px; display: flex; gap: 10px; align-items: center; color: var(--text-2); font-size: 12.5px; }
+
+  .connect p { margin: 0 0 10px; color: var(--text-2); }
+  .connect pre { margin: 0 0 10px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
+
+  #login { max-width: 380px; margin: 12vh auto 0; }
+  #login form { display: grid; gap: 10px; }
+  #login input { border: 1px solid var(--border); background: var(--raised); border-radius: 8px; padding: 8px 10px; }
+  #login .msg { color: var(--critical); font-size: 13px; min-height: 1em; margin: 0; }
+  #login p { color: var(--text-2); margin: 0 0 12px; }
+
+  #tooltip {
+    position: fixed; z-index: 10; pointer-events: none; min-width: 150px;
+    background: var(--raised); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.14); padding: 8px 10px; font-size: 12.5px;
+  }
+  #tooltip .tip-title { color: var(--text-2); margin-bottom: 4px; }
+  #tooltip .tip-row { display: flex; align-items: center; gap: 8px; }
+  #tooltip .tip-row strong { font-variant-numeric: tabular-nums; }
+  #tooltip .tip-row span.name { color: var(--text-2); }
+  #tooltip .key { width: 12px; height: 2px; border-radius: 1px; flex: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>struct-proxy</h1>
+      <p>Requests, tokens and errors for Blatent API traffic</p>
+    </div>
+    <div class="actions" id="actions" hidden>
+      <label class="switch" title="Refresh every 10 seconds">
+        <input type="checkbox" id="live" checked>
+        <span class="track" aria-hidden="true"></span>
+        Live
+      </label>
+      <span id="updated"></span>
+      <button class="btn small" id="refresh" type="button">Refresh</button>
+      <button class="link" id="signout" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <section id="login" class="card" hidden>
+    <div class="card-head"><h2>Open the dashboard</h2></div>
+    <p>Enter the <code>DASHBOARD_TOKEN</code> you set in Vercel.</p>
+    <form id="login-form">
+      <input id="token" type="password" autocomplete="current-password" placeholder="Dashboard token" aria-label="Dashboard token" required>
+      <p class="msg" id="login-msg" role="alert"></p>
+      <button class="btn primary" type="submit">Open dashboard</button>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <div class="filters" role="group" aria-label="Filters">
+      <div class="segmented" id="ranges" role="group" aria-label="Time range"></div>
+      <label class="field">Demo <select id="tag"></select></label>
+    </div>
+    <div id="notices"></div>
+    <div class="stack">
+      <div class="tiles dim" id="tiles"></div>
+      <div class="charts dim" id="charts"></div>
+      <div class="split dim">
+        <div class="card">
+          <div class="card-head"><h2>Demos</h2><span class="sub">Tag a demo with its base URL: /&lt;demo&gt;/v1/…</span></div>
+          <div class="scroll" id="demos"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Errors by code</h2><span class="sub" id="errors-sub"></span></div>
+          <div class="scroll" id="errors"></div>
+        </div>
+      </div>
+      <div class="card dim">
+        <div class="card-head"><h2>Recent requests</h2><span class="sub" id="requests-sub"></span></div>
+        <div class="scroll" id="requests"></div>
+      </div>
+      <div class="card connect">
+        <div class="card-head"><h2>Point a demo at this proxy</h2></div>
+        <p>Replace <code>https://api.blatent.ai</code> with this proxy's address. Everything else stays the same: same paths, same API key header, same responses. Add a path segment to tag requests by demo.</p>
+        <pre id="snippet"></pre>
+        <p>Or keep the plain base URL and send an <code>X-Proxy-Tag: booking-demo</code> header. The proxy never stores your API key, only an 8-character fingerprint of it.</p>
+      </div>
+    </div>
+  </section>
+</div>
+<div id="tooltip" role="tooltip" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+
+  const RANGES = [
+    { id: "24h", label: "24 hours", days: 2 },
+    { id: "7d", label: "7 days", days: 7 },
+    { id: "30d", label: "30 days", days: 30 },
+    { id: "90d", label: "90 days", days: 90 },
+  ];
+  const LOG_FETCH = 500;
+  const PAGE = 50;
+  const LIVE_MS = 10_000;
+
+  const state = {
+    range: "24h", tag: "all", live: true, shown: PAGE,
+    days: new Map(), dayStamp: new Map(), loadedDays: 0,
+    logs: [], logsStamp: 0, now: Date.now(), storage: true, bodies: true, logLimit: 0,
+    error: null, updated: null, expanded: new Set(), bodyCache: new Map(), tableView: new Set(),
+  };
+  let token = null;
+  let timer = null;
+
+  const $ = (id) => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+
+  // ---- DOM helpers (all dynamic text goes through textContent) ----------------------
+  function el(tag, attrs, ...kids) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs || {})) {
+      if (v == null || v === false) continue;
+      if (k === "class") node.className = v;
+      else if (k === "text") node.textContent = v;
+      else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v === true ? "" : v);
+    }
+    for (const kid of kids.flat()) if (kid != null && kid !== false) node.append(kid instanceof Node ? kid : String(kid));
+    return node;
+  }
+  function svg(tag, attrs) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [k, v] of Object.entries(attrs || {})) node.setAttribute(k, v);
+    return node;
+  }
+
+  // ---- Formatting --------------------------------------------------------------------
+  const nf = new Intl.NumberFormat();
+  const cf = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
+  const num = (n) => nf.format(Math.round(n || 0));
+  const big = (n) => (Math.abs(n) >= 10_000 ? cf.format(n) : num(n));
+  const pct = (n) => (n >= 0.1 || n === 0 ? `${(n * 100).toFixed(1)}%` : `${(n * 100).toFixed(2)}%`);
+  function dur(ms) {
+    if (ms == null || !isFinite(ms)) return "—";
+    if (ms < 1000) return `${Math.round(ms)} ms`;
+    return ms < 10_000 ? `${(ms / 1000).toFixed(2)} s` : `${(ms / 1000).toFixed(1)} s`;
+  }
+  const dayLabel = (iso, long) => new Date(iso + "T00:00:00Z").toLocaleDateString(undefined, long
+    ? { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }
+    : { month: "short", day: "numeric", timeZone: "UTC" });
+  const hourLabel = (t) => new Date(t).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  function timeLabel(ts) {
+    const d = new Date(ts);
+    const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })}, ${time}`;
+  }
+  function ago(ts) {
+    const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.round(s / 60)}m ago`;
+    if (s < 86_400) return `${Math.round(s / 3600)}h ago`;
+    return `${Math.round(s / 86_400)}d ago`;
+  }
+  function quantile(sorted, q) {
+    if (!sorted.length) return null;
+    const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+  }
+  const statusClass = (s) => (s < 400 ? "good" : s < 500 ? "warning" : "critical");
+
+  // ---- Data --------------------------------------------------------------------------
+  const rangeDef = () => RANGES.find((r) => r.id === state.range);
+
+  async function refresh(days) {
+    $("app").classList.add("loading");
+    try {
+      const res = await fetch(`/_proxy/stats?days=${days}&limit=${LOG_FETCH}`, {
+        headers: { authorization: `Bearer ${token}` }, cache: "no-store",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) return signOut("That token was not accepted.");
+      if (res.status === 503) return signOut(data.error?.message || "The dashboard is disabled.");
+      if (!res.ok) throw new Error(data.error?.message || `The stats request failed (HTTP ${res.status}).`);
+      for (const d of data.days) {
+        if ((state.dayStamp.get(d.date) || 0) <= data.now) {
+          state.days.set(d.date, d.fields);
+          state.dayStamp.set(d.date, data.now);
+        }
+      }
+      state.loadedDays = Math.max(state.loadedDays, days);
+      if (data.now >= state.logsStamp) {
+        state.logs = data.logs;
+        state.logsStamp = data.now;
+      }
+      Object.assign(state, { now: data.now, storage: data.storage, bodies: data.bodies, logLimit: data.logLimit, error: null, updated: Date.now() });
+    } catch (err) {
+      state.error = err.message || String(err);
+    } finally {
+      $("app").classList.remove("loading");
+    }
+    render();
+  }
+
+  function aggregate() {
+    const hourly = state.range === "24h";
+    const now = state.now;
+    const buckets = [];
+    if (hourly) {
+      const end = Math.floor(now / 3_600_000) * 3_600_000;
+      for (let i = 23; i >= 0; i--) {
+        const t = end - i * 3_600_000;
+        buckets.push({ key: new Date(t).toISOString().slice(0, 13), label: hourLabel(t), title: `${dayLabel(new Date(t).toISOString().slice(0, 10))}, ${hourLabel(t)}`, start: t });
+      }
+    } else {
+      for (let i = rangeDef().days - 1; i >= 0; i--) {
+        const iso = new Date(now - i * 86_400_000).toISOString().slice(0, 10);
+        buckets.push({ key: iso, label: dayLabel(iso), title: dayLabel(iso, true), start: Date.parse(iso + "T00:00:00Z") });
+      }
+    }
+    const zero = () => ({ req: 0, err: 0, in: 0, out: 0, ms: 0 });
+    const index = new Map(buckets.map((b) => [b.key, Object.assign(b, { m: zero() })]));
+    const tags = new Map();
+    const allTags = new Set();
+    const total = zero();
+    for (const [date, fields] of state.days) {
+      for (const [field, value] of Object.entries(fields)) {
+        const [tag, hour, metric] = field.split("|");
+        if (!(metric in total)) continue;
+        allTags.add(tag);
+        const bucket = index.get(hourly ? `${date}T${hour}` : date);
+        if (!bucket || (state.tag !== "all" && tag !== state.tag)) continue;
+        bucket.m[metric] += value;
+        total[metric] += value;
+        if (!tags.has(tag)) tags.set(tag, zero());
+        tags.get(tag)[metric] += value;
+      }
+    }
+    const since = buckets[0].start;
+    for (const log of state.logs) allTags.add(log.tag);
+    const logs = state.logs.filter((l) => l.ts >= since && (state.tag === "all" || l.tag === state.tag));
+    const sampleCapped = state.logs.length >= LOG_FETCH && state.logs[state.logs.length - 1].ts > since;
+    return { buckets, total, tags, allTags: [...allTags].sort(), logs, sampleCapped, hourly };
+  }
+
+  // ---- Rendering ---------------------------------------------------------------------
+  function render() {
+    const agg = aggregate();
+    $("updated").textContent = state.updated ? `Updated ${new Date(state.updated).toLocaleTimeString()}` : "";
+    renderRanges();
+    renderTagSelect(agg.allTags);
+    renderNotices(agg);
+    renderTiles(agg);
+    renderCharts(agg);
+    renderDemos(agg);
+    renderErrors(agg);
+    renderRequests(agg);
+  }
+
+  function renderRanges() {
+    $("ranges").replaceChildren(...RANGES.map((r) => el("button", {
+      type: "button", "aria-pressed": String(r.id === state.range), text: r.label,
+      onclick: () => setRange(r.id),
+    })));
+  }
+
+  function renderTagSelect(tags) {
+    const select = $("tag");
+    if (state.tag !== "all" && !tags.includes(state.tag)) tags = [...tags, state.tag];
+    select.replaceChildren(el("option", { value: "all", text: "All demos" }), ...tags.map((t) => el("option", { value: t, text: t })));
+    select.value = state.tag;
+  }
+
+  function renderNotices(agg) {
+    const notices = [];
+    if (state.error) notices.push(el("div", { class: "notice error" }, el("strong", { text: "Could not refresh. " }), state.error));
+    if (!state.storage) {
+      notices.push(el("div", { class: "notice" },
+        el("strong", { text: "Analytics storage isn't connected. " }),
+        "Requests are still proxied and each one is written to the Vercel runtime logs (search for \"struct-proxy\"). Connect Upstash Redis from the Vercel Marketplace and redeploy to see them here."));
+    }
+    $("notices").replaceChildren(...notices);
+  }
+
+  function renderTiles({ total, logs }) {
+    const ok = total.req - total.err;
+    const latencies = logs.map((l) => l.ms).sort((a, b) => a - b);
+    const tile = (label, value, note) => el("div", { class: "card tile" },
+      el("div", { class: "label", text: label }), el("div", { class: "value", text: value }), el("div", { class: "note", text: note }));
+    $("tiles").replaceChildren(
+      tile("Requests", big(total.req), `${num(ok)} succeeded`),
+      tile("Error rate", total.req ? pct(total.err / total.req) : "—", `${num(total.err)} failed`),
+      tile("Input tokens", big(total.in), ok ? `avg ${num(total.in / ok)} per successful call` : "No successful calls"),
+      tile("Output tokens", big(total.out), ok ? `avg ${num(total.out / ok)} per successful call` : "No successful calls"),
+      tile("Avg latency", total.req ? dur(total.ms / total.req) : "—",
+        latencies.length ? `p50 ${dur(quantile(latencies, 0.5))} · p90 ${dur(quantile(latencies, 0.9))}` : "No requests in range"),
+    );
+  }
+
+  function renderCharts({ buckets, hourly }) {
+    const per = hourly ? "per hour" : "per day (UTC)";
+    const charts = [
+      { id: "requests", title: "Requests", series: [
+        { name: "Succeeded", color: "var(--s1)", get: (m) => m.req - m.err },
+        { name: "Failed", color: "var(--s2)", get: (m) => m.err },
+      ] },
+      { id: "in", title: "Input tokens", series: [{ name: "Input tokens", color: "var(--s1)", get: (m) => m.in }] },
+      { id: "out", title: "Output tokens", series: [{ name: "Output tokens", color: "var(--s1)", get: (m) => m.out }] },
+    ];
+    const host = $("charts");
+    host.replaceChildren(...charts.map((c) => {
+      const asTable = state.tableView.has(c.id);
+      const plot = el("div", { class: "plot" });
+      const card = el("figure", { class: "card", style: "margin:0" },
+        el("div", { class: "card-head" },
+          el("div", {}, el("h2", { text: c.title }), el("span", { class: "sub", text: per })),
+          el("button", { class: "btn small", type: "button", "aria-pressed": String(asTable), text: asTable ? "Chart" : "Table",
+            onclick: () => { asTable ? state.tableView.delete(c.id) : state.tableView.add(c.id); renderCharts(aggregate()); } })),
+        c.series.length > 1 ? el("div", { class: "legend" }, c.series.map((s) =>
+          el("span", {}, el("i", { class: "swatch", style: `background:${s.color}` }), s.name))) : null,
+        plot);
+      card.chart = { plot, c, asTable };
+      return card;
+    }));
+    for (const card of host.children) {
+      const { plot, c, asTable } = card.chart;
+      if (asTable) chartTable(plot, buckets, c.series);
+      else columnChart(plot, buckets, c.series, c.title);
+    }
+  }
+
+  function niceTicks(max) {
+    if (max <= 0) return [0, 1];
+    const raw = max / 4;
+    const mag = 10 ** Math.floor(Math.log10(raw));
+    const step = Math.max(1, [1, 2, 5, 10].find((s) => s * mag >= raw) * mag);
+    const ticks = [];
+    for (let v = 0; v < max + step; v += step) ticks.push(v);
+    return ticks;
+  }
+
+  function barPath(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h);
+    return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  }
+
+  function columnChart(host, buckets, series, title) {
+    const W = Math.max(260, Math.floor(host.clientWidth || 320));
+    const top = 8, plotH = 150, axisH = 24, left = 44, right = 4;
+    const H = top + plotH + axisH;
+    const totals = buckets.map((b) => series.reduce((s, se) => s + se.get(b.m), 0));
+    const ticks = niceTicks(Math.max(0, ...totals));
+    const ymax = ticks[ticks.length - 1];
+    const y = (v) => top + plotH - (v / ymax) * plotH;
+    const root = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${title} chart. Use the Table button for the values.` });
+
+    for (const t of ticks) {
+      root.append(svg("line", { x1: left, x2: W - right, y1: y(t), y2: y(t), class: t === 0 ? "axis" : "grid" }));
+      const label = svg("text", { x: left - 8, y: y(t) + 4, class: "tick", "text-anchor": "end" });
+      label.textContent = cf.format(t);
+      root.append(label);
+    }
+
+    const n = buckets.length;
+    const band = (W - left - right) / n;
+    const bw = Math.max(1, Math.min(24, band - 2));
+    const every = Math.ceil(n / Math.max(1, Math.floor((W - left - right) / 58)));
+    buckets.forEach((b, i) => {
+      const x0 = left + i * band;
+      const x = x0 + (band - bw) / 2;
+      const col = svg("g", { class: "col" });
+      const hit = svg("rect", { x: x0, y: top, width: band, height: plotH, class: "hit", tabindex: "0", "aria-label": `${b.title}: ${series.map((s) => `${s.name} ${num(s.get(b.m))}`).join(", ")}` });
+      col.append(hit);
+      const segments = series.map((s, si) => ({ v: s.get(b.m), si })).filter((s) => s.v > 0);
+      let base = y(0);
+      segments.forEach((s, k) => {
+        const yTop = base - (s.v / ymax) * plotH;
+        const bottom = k > 0 ? base - 2 : base; // 2px surface gap between stacked segments
+        const h = bottom - yTop;
+        if (h > 0.5) col.append(svg("path", { d: barPath(x, yTop, bw, h, k === segments.length - 1 ? 4 : 0), class: "bar", style: `fill:${series[s.si].color}` }));
+        base = yTop;
+      });
+      if ((n - 1 - i) % every === 0) {
+        const label = svg("text", { x: x0 + band / 2, y: top + plotH + 17, class: "tick", "text-anchor": "middle" });
+        label.textContent = b.label;
+        root.append(label);
+      }
+      const show = (ev) => showTip(ev, b.title, series.map((s) => ({ name: s.name, color: s.color, value: num(s.get(b.m)) })));
+      hit.addEventListener("pointermove", show);
+      hit.addEventListener("focus", show);
+      hit.addEventListener("pointerleave", hideTip);
+      hit.addEventListener("blur", hideTip);
+      root.append(col);
+    });
+    if (!totals.some((t) => t > 0)) {
+      const empty = svg("text", { x: left + (W - left - right) / 2, y: top + plotH / 2, class: "empty", "text-anchor": "middle" });
+      empty.textContent = "No data in this range";
+      root.append(empty);
+    }
+    host.replaceChildren(root);
+  }
+
+  function chartTable(host, buckets, series) {
+    host.replaceChildren(el("div", { class: "table-view" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", { text: "Period" }), series.map((s) => el("th", { class: "num", text: s.name })))),
+      el("tbody", {}, [...buckets].reverse().map((b) => el("tr", {},
+        el("td", { text: b.title }), series.map((s) => el("td", { class: "num", text: num(s.get(b.m)) }))))))));
+  }
+
+  const tip = $("tooltip");
+  function showTip(ev, title, rows) {
+    tip.replaceChildren(el("div", { class: "tip-title", text: title }), ...rows.map((r) =>
+      el("div", { class: "tip-row" }, el("i", { class: "key", style: `background:${r.color}` }), el("strong", { text: r.value }), el("span", { class: "name", text: r.name }))));
+    tip.hidden = false;
+    let x = ev.clientX, y = ev.clientY;
+    if (!ev.type.startsWith("pointer")) {
+      const rect = ev.target.getBoundingClientRect();
+      x = rect.left + rect.width / 2;
+      y = rect.top + 40;
+    }
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = `${Math.min(window.innerWidth - w - 8, Math.max(8, x + 14))}px`;
+    tip.style.top = `${y - h - 12 < 8 ? y + 16 : y - h - 12}px`;
+  }
+  function hideTip() { tip.hidden = true; }
+
+  function renderDemos({ tags, logs }) {
+    const last = new Map();
+    for (const l of logs) if (!last.has(l.tag)) last.set(l.tag, l.ts);
+    const rows = [...tags.entries()].sort((a, b) => b[1].req - a[1].req);
+    $("demos").replaceChildren(el("table", {},
+      el("thead", {}, el("tr", {}, ["Demo", "Requests", "Failed", "Input tokens", "Output tokens", "Avg latency", "Last request"].map((h, i) =>
+        el("th", { class: i > 0 && i < 6 ? "num" : null, text: h })))),
+      el("tbody", {}, rows.length ? rows.map(([tag, m]) => el("tr", {
+        class: "clickable", tabindex: "0", title: state.tag === tag ? "Show all demos" : `Show only ${tag}`,
+        onclick: () => setTag(state.tag === tag ? "all" : tag),
+        onkeydown: (e) => { if (e.key === "Enter") setTag(state.tag === tag ? "all" : tag); },
+      },
+        el("td", { text: tag }), el("td", { class: "num", text: num(m.req) }), el("td", { class: "num", text: num(m.err) }),
+        el("td", { class: "num", text: num(m.in) }), el("td", { class: "num", text: num(m.out) }),
+        el("td", { class: "num", text: m.req ? dur(m.ms / m.req) : "—" }),
+        el("td", { class: "muted", text: last.has(tag) ? ago(last.get(tag)) : "—" }),
+      )) : el("tr", {}, el("td", { colspan: "7", class: "empty-row", text: "No requests in this range yet." })))));
+  }
+
+  function renderErrors({ logs, sampleCapped }) {
+    const codes = new Map();
+    for (const l of logs) {
+      if (l.status < 400) continue;
+      const c = codes.get(l.code) || { count: 0, status: l.status, last: l.ts };
+      c.count++;
+      codes.set(l.code, c);
+    }
+    $("errors-sub").textContent = sampleCapped ? `latest ${LOG_FETCH} requests` : "";
+    const rows = [...codes.entries()].sort((a, b) => b[1].count - a[1].count);
+    $("errors").replaceChildren(el("table", {},
+      el("thead", {}, el("tr", {}, el("th", { text: "Code" }), el("th", { class: "num", text: "Count" }), el("th", { text: "Last" }))),
+      el("tbody", {}, rows.length ? rows.map(([code, c]) => el("tr", {},
+        el("td", {}, el("span", { class: "status" }, el("i", { class: `dot ${statusClass(c.status)}` }), `${c.status} ${code || ""}`)),
+        el("td", { class: "num", text: num(c.count) }),
+        el("td", { class: "muted", text: ago(c.last) }),
+      )) : el("tr", {}, el("td", { colspan: "3", class: "empty-row", text: "No failed requests in this range." })))));
+  }
+
+  function renderRequests({ logs, sampleCapped }) {
+    $("requests-sub").textContent = logs.length
+      ? `${num(Math.min(logs.length, state.shown))} of ${num(logs.length)}${sampleCapped ? ` (latest ${LOG_FETCH} loaded)` : ""}`
+      : "";
+    const head = ["", "Time", "Demo", "Request", "Status", "Latency", "Tokens in → out", "Schema"];
+    const rows = [];
+    for (const l of logs.slice(0, state.shown)) {
+      const open = state.expanded.has(l.id);
+      const toggle = () => { open ? state.expanded.delete(l.id) : state.expanded.add(l.id); renderRequests(aggregate()); };
+      rows.push(el("tr", { class: `clickable${open ? " open" : ""}`, tabindex: "0", "aria-expanded": String(open), onclick: toggle,
+        onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } } },
+        el("td", {}, el("span", { class: "chev", "aria-hidden": "true", text: "›" })),
+        el("td", { class: "muted", text: timeLabel(l.ts) }),
+        el("td", { text: l.tag }),
+        el("td", { class: "mono", text: `${l.method} ${l.path}` }),
+        el("td", {}, el("span", { class: "status" }, el("i", { class: `dot ${statusClass(l.status)}` }), String(l.status),
+          l.code ? el("span", { class: "code-tag", text: ` ${l.code}` }) : null)),
+        el("td", { class: "num", text: dur(l.ms) }),
+        el("td", { class: "num", text: l.in != null || l.out != null ? `${num(l.in)} → ${num(l.out)}` : "—" }),
+        el("td", { class: "muted", text: l.schema || "—" }),
+      ));
+      if (open) rows.push(detailRow(l, head.length));
+    }
+    const children = [el("table", {},
+      el("thead", {}, el("tr", {}, head.map((h, i) => el("th", { class: i === 5 || i === 6 ? "num" : null, text: h })))),
+      el("tbody", {}, rows.length ? rows : el("tr", {}, el("td", { colspan: String(head.length), class: "empty-row",
+        text: state.storage ? "No requests in this range yet. Point a demo at this proxy (see below)." : "Connect storage to see requests here." }))))];
+    if (logs.length > state.shown) {
+      children.push(el("div", { class: "more" }, el("button", { class: "btn small", type: "button", text: `Show ${Math.min(PAGE, logs.length - state.shown)} more`,
+        onclick: () => { state.shown += PAGE; renderRequests(aggregate()); } })));
+    }
+    $("requests").replaceChildren(...children);
+  }
+
+  function detailRow(l, span) {
+    const item = (label, value, mono) => el("div", {}, el("dt", { text: label }), el("dd", { class: mono ? "mono" : null, text: value ?? "—" }));
+    const bodies = el("div", { class: "bodies" });
+    const cached = state.bodyCache.get(l.id);
+    if (!state.bodies) bodies.append(el("p", { class: "muted", text: "Body logging is off (LOG_BODIES=0)." }));
+    else if (cached) fillBodies(bodies, cached);
+    else {
+      bodies.append(el("p", { class: "muted", text: "Loading bodies…" }));
+      loadBodies(l.id).then((b) => fillBodies(bodies, b));
+    }
+    return el("tr", { class: "detail" }, el("td", { colspan: String(span) },
+      el("dl", { class: "meta" },
+        item("Request ID", l.id, true),
+        item("Date", new Date(l.ts).toLocaleString()),
+        item("API key fingerprint", l.key, true),
+        item("Schema", l.schema),
+        item("Schema digest", l.digest, true),
+        item("Policy", l.policy),
+        item("Sizes", `${num(l.reqBytes)} B request · ${num(l.resBytes)} B response`),
+        item("Retry-After", l.retryAfter),
+        item("Server-Timing", l.timing, true),
+        item("User agent", l.ua),
+      ),
+      bodies));
+  }
+
+  async function loadBodies(id) {
+    try {
+      const res = await fetch(`/_proxy/log/${encodeURIComponent(id)}`, { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+      const body = res.ok ? await res.json() : { missing: true };
+      state.bodyCache.set(id, body);
+      return body;
+    } catch {
+      return { failed: true };
+    }
+  }
+
+  function fillBodies(host, b) {
+    if (b.missing || b.failed) {
+      host.replaceChildren(el("p", { class: "muted", text: b.failed ? "Could not load the bodies." : "Bodies for this request have expired or were not stored." }));
+      return;
+    }
+    const pretty = (text) => {
+      if (text == null) return "(empty)";
+      try { return JSON.stringify(JSON.parse(text), null, 2); } catch { return text; }
+    };
+    host.replaceChildren(
+      el("div", {}, el("h3", { text: "Request body" }), el("pre", { class: "body", text: pretty(b.request) })),
+      el("div", {}, el("h3", { text: "Response body" }), el("pre", { class: "body", text: pretty(b.response) })));
+  }
+
+  // ---- Controls ----------------------------------------------------------------------
+  function setRange(id) {
+    state.range = id;
+    state.shown = PAGE;
+    render();
+    if (rangeDef().days > state.loadedDays) refresh(rangeDef().days);
+  }
+  function setTag(tag) {
+    state.tag = tag;
+    state.shown = PAGE;
+    render();
+  }
+
+  function schedule() {
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if (state.live && !document.hidden) refresh(2);
+    }, LIVE_MS);
+  }
+
+  function start() {
+    $("login").hidden = true;
+    $("app").hidden = false;
+    $("actions").hidden = false;
+    const origin = location.origin;
+    $("snippet").textContent = [
+      `# untagged`,
+      `${origin}/v1/resolve`,
+      ``,
+      `# tagged as "booking-demo"`,
+      `${origin}/booking-demo/v1/resolve`,
+      ``,
+      `# Python (httpx)`,
+      `httpx.Client(base_url="${origin}/booking-demo",`,
+      `             headers={"Authorization": f"Bearer {os.environ['BLATENT_API_KEY']}"},`,
+      `             timeout=195)`,
+    ].join("\n");
+    render();
+    refresh(rangeDef().days);
+    schedule();
+  }
+
+  function signOut(message) {
+    token = null;
+    store.del("sp-token");
+    clearInterval(timer);
+    $("app").hidden = true;
+    $("actions").hidden = true;
+    $("login").hidden = false;
+    $("login-msg").textContent = message || "";
+    $("token").focus();
+  }
+
+  $("login-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    token = $("token").value.trim();
+    if (!token) return;
+    store.set("sp-token", token);
+    $("login-msg").textContent = "";
+    start();
+  });
+  $("signout").addEventListener("click", () => signOut(""));
+  $("refresh").addEventListener("click", () => refresh(Math.max(2, rangeDef().days)));
+  $("live").addEventListener("change", (e) => { state.live = e.target.checked; if (state.live) refresh(2); });
+  $("tag").addEventListener("change", (e) => setTag(e.target.value));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && state.live && token) refresh(2); });
+  let resizeFrame = 0;
+  window.addEventListener("resize", () => {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = requestAnimationFrame(() => { if (token) renderCharts(aggregate()); });
+  });
+
+  // A token can be passed once as #token=… (the fragment never reaches the server).
+  function tokenFromFragment() {
+    const value = new URLSearchParams(location.hash.slice(1)).get("token");
+    if (!value) return null;
+    store.set("sp-token", value);
+    history.replaceState(null, "", location.pathname + location.search);
+    return value;
+  }
+  window.addEventListener("hashchange", () => {
+    const value = tokenFromFragment();
+    if (value) { token = value; start(); }
+  });
+  token = tokenFromFragment() || store.get("sp-token");
+  if (token) start();
+  else signOut("");
+})();
+</script>
+</body>
+</html>

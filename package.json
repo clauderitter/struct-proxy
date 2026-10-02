@@ -1,0 +1,21 @@
+{
+  "name": "struct-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Transparent proxy for the Blatent API (blatent-struct) with request logs and token analytics, made for Vercel.",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env.local scripts/dev.ts",
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "@vercel/functions": "^3.9.9"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "~6.0.3"
+  }
+}

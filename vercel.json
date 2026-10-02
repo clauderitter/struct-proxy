@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "fluid": true,
+  "regions": ["cle1"],
+  "functions": {
+    "api/index.ts": { "maxDuration": 300 }
+  },
+  "rewrites": [
+    { "source": "/v1/:path*", "destination": "/api?__path=/v1/:path*" },
+    { "source": "/:tag/v1/:path*", "destination": "/api?__path=/:tag/v1/:path*" },
+    { "source": "/_proxy/:path*", "destination": "/api?__path=/_proxy/:path*" }
+  ]
+}
