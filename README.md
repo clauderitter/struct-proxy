@@ -56,6 +56,7 @@ Without storage the proxy still works. Each request is logged as one JSON line i
 - Errors grouped by Blatent error code
 - Recent requests. Click a row to see the request ID, schema, policy, API-key fingerprint, `Server-Timing`, user agent, and the stored request and response bodies.
 - Refreshes every 10 seconds while the tab is visible, so you can watch it during a live demo
+- **Reset stats…** deletes everything stored (request log, counters and bodies for every demo) after a confirmation, e.g. to start a demo with a clean slate. Requests sent while a reset runs may survive it.
 
 ## Configuration
 
@@ -89,6 +90,7 @@ Each proxied request costs about 9 Upstash commands. Loading a range costs one c
 | `/_proxy/health` | Public. Upstream URL and whether storage and the dashboard are configured. |
 | `/_proxy/stats?days=7&limit=500` | Counters and recent log entries. `Authorization: Bearer <DASHBOARD_TOKEN>` |
 | `/_proxy/log/<request-id>` | Stored bodies for one request. Same auth. |
+| `POST /_proxy/reset` | Deletes every key under `REDIS_PREFIX`. Same auth. Returns `{"deleted": <count>}`. |
 
 ## Deployment notes
 

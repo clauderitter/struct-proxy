@@ -198,10 +198,15 @@ async function admin(req: Request, url: URL): Promise<Response> {
     return json(503, { error: { code: "DASHBOARD_DISABLED", message: "Set the DASHBOARD_TOKEN environment variable to enable the dashboard." } });
   }
   if (!authorized(req)) return json(401, { error: { code: "UNAUTHORIZED", message: "Invalid dashboard token." } });
-  if (req.method !== "GET") return json(405, { error: { code: "METHOD_NOT_ALLOWED", message: "Use GET." } });
-  if (!REDIS_URL) return json(200, { storage: false, bodies: LOG_BODIES, logLimit: LOG_LIMIT, now: Date.now(), days: [], logs: [] });
+  const isReset = route === "/reset";
+  const method = isReset ? "POST" : "GET";
+  if (req.method !== method) return json(405, { error: { code: "METHOD_NOT_ALLOWED", message: `Use ${method}.` } });
+  if (!REDIS_URL) {
+    return json(200, isReset ? { deleted: 0 } : { storage: false, bodies: LOG_BODIES, logLimit: LOG_LIMIT, now: Date.now(), days: [], logs: [] });
+  }
 
   try {
+    if (isReset) return await reset();
     if (route === "/stats") return await stats(url);
     const log = route.match(/^\/log\/([A-Za-z0-9-]{1,64})$/);
     if (log) {
@@ -239,6 +244,24 @@ async function stats(url: URL): Promise<Response> {
     days: dates.map((date, i) => ({ date, fields: hashToObject(results[i]) })),
     logs,
   });
+}
+
+// Deletes everything struct-proxy stored: the request log, counters and bodies.
+async function reset(): Promise<Response> {
+  const match = PREFIX.replace(/[*?[\]\\]/g, "\\$&") + "*";
+  const keys: string[] = [];
+  let cursor = "0";
+  do {
+    const [page] = await redis([["SCAN", cursor, "MATCH", match, "COUNT", 1000]]);
+    const [next, batch] = page as [string | number, string[]];
+    cursor = String(next);
+    keys.push(...batch);
+  } while (cursor !== "0");
+  const dels: Cmd[] = [];
+  for (let i = 0; i < keys.length; i += 500) dels.push(["DEL", ...keys.slice(i, i + 500)]);
+  if (dels.length) await redis(dels);
+  console.log(JSON.stringify({ event: "struct-proxy-reset", deleted: keys.length }));
+  return json(200, { deleted: keys.length });
 }
 
 function authorized(req: Request): boolean {

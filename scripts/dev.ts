@@ -120,6 +120,15 @@ function run([op, key, ...args]: string[]): unknown {
       if (!live) return 0;
       live.expires = Date.now() + Number(args[0]) * 1000;
       return 1;
+    case "SCAN": {
+      // Returns every match in one page (cursor "0"); supports only the * wildcard.
+      const pattern = args[args.findIndex((a) => a.toUpperCase() === "MATCH") + 1] ?? "*";
+      const regex = new RegExp("^" + pattern.replace(/\\(.)|([.+^${}()|[\]])|\*/g, (m, esc, special) =>
+        esc ? "\\" + esc : special ? "\\" + special : ".*") + "$");
+      return ["0", [...memory.keys()].filter((k) => regex.test(k))];
+    }
+    case "DEL":
+      return [key, ...args].filter((k) => memory.delete(k)).length;
     default:
       throw new Error(`ERR command ${op} not supported by the dev store`);
   }

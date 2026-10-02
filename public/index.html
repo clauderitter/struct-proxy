@@ -88,6 +88,7 @@
     padding: 6px 11px; cursor: pointer; line-height: 1.2; white-space: nowrap;
   }
   .btn:hover { background: var(--hover); }
+  .btn:disabled { opacity: .5; cursor: default; }
   .btn.primary { background: var(--text); color: var(--page); border-color: transparent; }
   .btn.small { padding: 4px 8px; font-size: 12px; }
   .link { background: none; border: 0; padding: 0; color: var(--text-2); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
@@ -110,6 +111,7 @@
   .notice { border: 1px solid var(--border); background: var(--surface); border-left: 3px solid var(--warning); border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; color: var(--text-2); }
   .notice strong { color: var(--text); }
   .notice.error { border-left-color: var(--critical); }
+  .notice.info { border-left-color: var(--good); }
 
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; min-width: 0; }
   .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
@@ -209,6 +211,7 @@
       </label>
       <span id="updated"></span>
       <button class="btn small" id="refresh" type="button">Refresh</button>
+      <button class="btn small" id="reset" type="button" title="Delete all logged requests and stats">Reset stats…</button>
       <button class="link" id="signout" type="button">Sign out</button>
     </div>
   </header>
@@ -275,7 +278,8 @@
     range: "24h", tag: "all", live: true, shown: PAGE,
     days: new Map(), dayStamp: new Map(), loadedDays: 0,
     logs: [], logsStamp: 0, now: Date.now(), storage: true, bodies: true, logLimit: 0,
-    error: null, updated: null, expanded: new Set(), bodyCache: new Map(), tableView: new Set(),
+    error: null, info: null, updated: null, expanded: new Set(), bodyCache: new Map(), tableView: new Set(),
+    epoch: 0, // bumped by a reset so responses requested before it are dropped
   };
   let token = null;
   let timer = null;
@@ -344,6 +348,7 @@
   const rangeDef = () => RANGES.find((r) => r.id === state.range);
 
   async function refresh(days) {
+    const epoch = state.epoch;
     $("app").classList.add("loading");
     try {
       const res = await fetch(`/_proxy/stats?days=${days}&limit=${LOG_FETCH}`, {
@@ -353,6 +358,7 @@
       if (res.status === 401) return signOut("That token was not accepted.");
       if (res.status === 503) return signOut(data.error?.message || "The dashboard is disabled.");
       if (!res.ok) throw new Error(data.error?.message || `The stats request failed (HTTP ${res.status}).`);
+      if (epoch !== state.epoch) return;
       for (const d of data.days) {
         if ((state.dayStamp.get(d.date) || 0) <= data.now) {
           state.days.set(d.date, d.fields);
@@ -444,7 +450,8 @@
 
   function renderNotices(agg) {
     const notices = [];
-    if (state.error) notices.push(el("div", { class: "notice error" }, el("strong", { text: "Could not refresh. " }), state.error));
+    if (state.info) notices.push(el("div", { class: "notice info", role: "status", text: state.info }));
+    if (state.error) notices.push(el("div", { class: "notice error" }, el("strong", { text: "Something went wrong. " }), state.error));
     if (!state.storage) {
       notices.push(el("div", { class: "notice" },
         el("strong", { text: "Analytics storage isn't connected. " }),
@@ -731,6 +738,30 @@
     render();
   }
 
+  async function resetStats() {
+    if (!confirm("Delete all logged requests, token counts and stored bodies for every demo? This can't be undone.")) return;
+    const button = $("reset");
+    button.disabled = true;
+    try {
+      const res = await fetch("/_proxy/reset", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) return signOut("That token was not accepted.");
+      if (!res.ok) throw new Error(data.error?.message || `The reset failed (HTTP ${res.status}).`);
+      state.epoch++;
+      Object.assign(state, { loadedDays: 0, logs: [], logsStamp: 0, shown: PAGE, error: null, info: "Stats cleared." });
+      state.days.clear();
+      state.dayStamp.clear();
+      state.bodyCache.clear();
+      state.expanded.clear();
+      setTimeout(() => { state.info = null; render(); }, 8000);
+    } catch (err) {
+      state.error = err.message || String(err);
+    } finally {
+      button.disabled = false;
+    }
+    await refresh(rangeDef().days);
+  }
+
   function schedule() {
     clearInterval(timer);
     timer = setInterval(() => {
@@ -780,6 +811,7 @@
     start();
   });
   $("signout").addEventListener("click", () => signOut(""));
+  $("reset").addEventListener("click", resetStats);
   $("refresh").addEventListener("click", () => refresh(Math.max(2, rangeDef().days)));
   $("live").addEventListener("change", (e) => { state.live = e.target.checked; if (state.live) refresh(2); });
   $("tag").addEventListener("change", (e) => setTag(e.target.value));
